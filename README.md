@@ -59,12 +59,11 @@ Example output:
 
 ```
 === Today ===
-Requests:        42
-Chars saved:     284,301  (18.3% reduction)
-Tokens saved ~:  71,075
+Requests:        86
+Saved:           1,191,475 chars (~297,846 tokens, 29.8% reduction)
 
-  recompress:    138
-  dedup_read:    23
-  stale_trunc:   61
-  capped:        12
+  recompress:    5
+  dedup_read:    5
+  stale_trunc:   100
+  capped:        174
 ```
