@@ -17,7 +17,7 @@ Claude Code respects the `ANTHROPIC_BASE_URL` environment variable. Point it at 
 1. **Re-compress tool results** — strips ANSI codes, progress bars, blank lines, license headers from historical Read/Bash/Grep output
 2. **Deduplicate file reads** — if the same file was Read multiple times, only the most recent result is kept in full
 3. **Truncate stale results** — tool results older than 10 assistant turns are trimmed to 500 chars
-4. **Hard cap** — no single tool result exceeds 4000 chars
+4. **Hard cap** — Truncate tool results after 5 turns
 
 ## Setup
 
