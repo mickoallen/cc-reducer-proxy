@@ -21,6 +21,10 @@ logger = logging.getLogger("proxy")
 
 from typing import Optional
 
+# Animated ellipsis state
+_dot_state = 0
+_DOTS = ["   ", ".  ", ".. ", "..."]
+
 # Session-level counters for the live status line
 _session_requests = 0
 _session_tokens_saved = 0
@@ -60,19 +64,27 @@ def _pct(saved, original):
     return f"{saved / original * 100:.1f}%" if original > 0 else "0.0%"
 
 
-def _update_status_line():
+def _update_status_line(dot="   "):
     """Overwrite a single terminal line with current session stats."""
     tr = _alltime_requests + _session_requests
     tt = _alltime_tokens_saved + _session_tokens_saved
     to = _alltime_original_chars + _session_original_chars
     tc = _alltime_chars_saved + _session_chars_saved
     line = (
-        f"\r\033[Kcc-reducer-proxy | "
+        f"\r\033[Kcc-reducer-proxy{dot} | "
         f"session: {_session_requests} reqs, ~{_session_tokens_saved:,} tokens saved ({_pct(_session_chars_saved, _session_original_chars)}) | "
         f"all-time: {tr} reqs, ~{tt:,} tokens saved ({_pct(tc, to)})"
     )
     sys.stderr.write(line)
     sys.stderr.flush()
+
+
+async def _animate():
+    global _dot_state
+    while True:
+        await asyncio.sleep(0.5)
+        _dot_state = (_dot_state + 1) % 4
+        _update_status_line(_DOTS[_dot_state])
 
 http_client: Optional[httpx.AsyncClient] = None
 
@@ -84,7 +96,9 @@ async def lifespan(app: FastAPI):
         timeout=httpx.Timeout(connect=10, read=600, write=30, pool=10),
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
     )
+    task = asyncio.create_task(_animate())
     yield
+    task.cancel()
     await http_client.aclose()
 
 
