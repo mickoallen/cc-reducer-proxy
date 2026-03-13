@@ -48,8 +48,7 @@ def summarize(entries: list[dict]):
     reduction_pct = (total_saved_chars / total_original * 100) if total_original else 0
 
     print(f"Requests:        {total_requests}")
-    print(f"Chars saved:     {total_saved_chars:,}  ({reduction_pct:.1f}% reduction)")
-    print(f"Tokens saved ~:  {total_saved_tokens:,}")
+    print(f"Saved:           {total_saved_chars:,} chars (~{total_saved_tokens:,} tokens, {reduction_pct:.1f}% reduction)")
     print()
     print(f"  recompress:    {recompress}")
     print(f"  dedup_read:    {dedup}")

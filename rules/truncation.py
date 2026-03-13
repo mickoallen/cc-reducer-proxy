@@ -3,6 +3,7 @@
 from typing import List, Tuple
 
 MAX_RESULT_CHARS = 4000
+CAP_TTL_TURNS = 5  # tool results newer than this many assistant turns are never capped
 STALE_TTL_TURNS = 10  # tool results older than this many assistant turns get truncated
 STALE_MAX_CHARS = 500
 
@@ -35,24 +36,40 @@ def _truncate_block_content(block: dict, max_chars: int, note: str) -> dict:
 
 
 def cap_tool_results(messages: list) -> Tuple[list, int]:
-    """Hard-cap each tool_result at MAX_RESULT_CHARS."""
+    """Hard-cap each tool_result at MAX_RESULT_CHARS, skipping recent messages."""
+    total_assistant_turns = sum(1 for m in messages if m.get("role") == "assistant")
+
     capped = 0
     result = []
+    assistant_turn = 0
+
     for msg in messages:
+        if msg.get("role") == "assistant":
+            assistant_turn += 1
+            result.append(msg)
+            continue
+
         if msg.get("role") != "user":
             result.append(msg)
             continue
+
         content = msg.get("content", [])
         if not isinstance(content, list):
             result.append(msg)
             continue
+
+        turns_ago = total_assistant_turns - assistant_turn
+        if turns_ago <= CAP_TTL_TURNS:
+            result.append(msg)
+            continue
+
         new_content = []
         changed = False
         for block in content:
             if isinstance(block, dict) and block.get("type") == "tool_result":
                 new_block = _truncate_block_content(
                     block, MAX_RESULT_CHARS,
-                    f"[truncated — exceeded {MAX_RESULT_CHARS} char cap]"
+                    f"[capped — result from {turns_ago} turns ago exceeded {MAX_RESULT_CHARS} char limit]"
                 )
                 if new_block is not block:
                     capped += 1

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 
 import httpx
@@ -19,6 +20,59 @@ UPSTREAM = "https://api.anthropic.com"
 logger = logging.getLogger("proxy")
 
 from typing import Optional
+
+# Session-level counters for the live status line
+_session_requests = 0
+_session_tokens_saved = 0
+_session_chars_saved = 0
+
+# All-time counters (loaded from stats log at import)
+_alltime_requests = 0
+_alltime_tokens_saved = 0
+_alltime_chars_saved = 0
+_alltime_original_chars = 0
+
+# Session-level original chars for % calculation
+_session_original_chars = 0
+
+
+def _load_alltime_totals():
+    global _alltime_requests, _alltime_tokens_saved, _alltime_chars_saved, _alltime_original_chars
+    from stats import STATS_LOG
+    if not os.path.exists(STATS_LOG):
+        return
+    with open(STATS_LOG) as f:
+        for line in f:
+            try:
+                entry = json.loads(line)
+                _alltime_requests += 1
+                _alltime_chars_saved += entry.get("saved_chars", 0)
+                _alltime_tokens_saved += entry.get("saved_tokens_est", 0)
+                _alltime_original_chars += entry.get("original_chars", 0)
+            except json.JSONDecodeError:
+                continue
+
+
+_load_alltime_totals()
+
+
+def _pct(saved, original):
+    return f"{saved / original * 100:.1f}%" if original > 0 else "0.0%"
+
+
+def _update_status_line():
+    """Overwrite a single terminal line with current session stats."""
+    tr = _alltime_requests + _session_requests
+    tt = _alltime_tokens_saved + _session_tokens_saved
+    to = _alltime_original_chars + _session_original_chars
+    tc = _alltime_chars_saved + _session_chars_saved
+    line = (
+        f"\r\033[Kcc-reducer-proxy | "
+        f"session: {_session_requests} reqs, ~{_session_tokens_saved:,} tokens saved ({_pct(_session_chars_saved, _session_original_chars)}) | "
+        f"all-time: {tr} reqs, ~{tt:,} tokens saved ({_pct(tc, to)})"
+    )
+    sys.stderr.write(line)
+    sys.stderr.flush()
 
 http_client: Optional[httpx.AsyncClient] = None
 
@@ -59,11 +113,13 @@ async def messages(request: Request):
 
     saved = stats.get("saved_chars", 0)
     log_request(model, stats)
-    if saved > 0:
-        logger.info(
-            "compressed %s: -%s chars (-%s tokens est) | rules: %s",
-            model, f"{saved:,}", f"{stats['saved_tokens_est']:,}", stats["rules"],
-        )
+
+    global _session_requests, _session_tokens_saved, _session_chars_saved, _session_original_chars
+    _session_requests += 1
+    _session_chars_saved += saved
+    _session_tokens_saved += stats.get("saved_tokens_est", 0)
+    _session_original_chars += stats.get("original_chars", 0)
+    _update_status_line()
 
     headers = _upstream_headers(request)
     is_streaming = payload.get("stream", False)
