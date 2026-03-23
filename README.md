@@ -14,10 +14,42 @@ Claude Code respects the `ANTHROPIC_BASE_URL` environment variable. Point it at 
 
 ### Compression pipeline
 
-1. **Re-compress tool results** — strips ANSI codes, progress bars, blank lines, license headers from historical Read/Bash/Grep output
-2. **Deduplicate file reads** — if the same file was Read multiple times, only the most recent result is kept in full
-3. **Truncate stale results** — tool results older than 10 assistant turns are trimmed to 500 chars
-4. **Hard cap** — Truncate tool results after 5 turns
+Applied on every API request, in order:
+
+#### 1. Re-compress tool results
+
+Cleans bloat from Read, Bash, Grep, and Glob tool output:
+
+- **ANSI escape codes** — color/formatting sequences stripped
+- **Progress indicators** — percentage bars, spinners (`⠋⠙⠹...`), dot sequences, `[####>---]` bars
+- **Blank line collapse** — 3+ consecutive blank lines → 1
+- **License headers** — copyright/license comment blocks at the top of files replaced with `[license header - N lines]`
+- **Trailing whitespace** — stripped from every line
+- **Repetitive lines** (Bash only) — 3+ identical consecutive lines → 1 line + `[repeated N times]`
+- **Line truncation** (Bash only) — output capped at 200 lines
+- **JSON minification** — JSON output is compacted (whitespace removed)
+- **Timestamp prefixes** — ISO timestamps at the start of log lines are stripped when detected in bulk
+
+#### 2. Deduplicate tool results
+
+When the same tool call is made multiple times with identical parameters, only the most recent result is kept. Earlier results are replaced with a stub like `[deduplicated — superseded by later Read of src/foo.py]`.
+
+Applies to: **Read** (same file path + offset/limit), **Bash** (same command), **Grep** (same pattern + path + glob), **Glob** (same pattern + path).
+
+#### 3. Truncate stale results
+
+Tool results older than 10 assistant turns are trimmed to 500 chars, with a `[truncated — result from N turns ago]` notice.
+
+#### 4. Hard cap
+
+Tool results older than 5 assistant turns are capped at 4000 chars.
+
+#### 5. Compress old assistant blocks
+
+For assistant messages older than 10 turns:
+
+- **Text blocks** — Claude's own explanations are truncated to 500 chars. Old prose rarely gets re-referenced.
+- **Tool use inputs** — long input values (bash commands, file contents in Write calls) are truncated to 200 chars. The tool name and ID are preserved for result pairing.
 
 ## Setup
 
@@ -60,10 +92,12 @@ Example output:
 ```
 === Today ===
 Requests:        86
-Saved:           1,191,475 chars (~297,846 tokens, 29.8% reduction)
+Saved:           1,191,475 chars (~397,158 tokens, 29.8% reduction)
 
   recompress:    5
-  dedup_read:    5
+  dedup_tools:   5
   stale_trunc:   100
   capped:        174
+  asst_text:     12
+  tool_input:    8
 ```

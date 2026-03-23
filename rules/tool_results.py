@@ -1,5 +1,6 @@
 """Re-compress tool result text — ported from cc-token-reducer hooks/compress-output.py."""
 
+import json
 import os
 import re
 from typing import List, Tuple
@@ -29,6 +30,33 @@ COMMENT_BLOCK_END = re.compile(r"^\s*(\d+)\t.*\*/\s*$")
 SHEBANG = re.compile(r"^\s*(\d+)\t\s*#!")
 
 MAX_OUTPUT_LINES = 200
+
+# Timestamps like 2026-03-23T10:15:32.123Z or [2026-03-23 10:15:32]
+TIMESTAMP_PREFIX = re.compile(
+    r"^(\[?\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\]?\s*)"
+)
+
+
+def minify_json(text: str) -> str:
+    """If text looks like JSON, minify it. Otherwise return unchanged."""
+    stripped = text.strip()
+    if not (stripped.startswith(("{", "[")) and stripped.endswith(("}", "]"))):
+        return text
+    try:
+        parsed = json.loads(stripped)
+        return json.dumps(parsed, separators=(",", ":"))
+    except (json.JSONDecodeError, ValueError):
+        return text
+
+
+def strip_timestamp_prefixes(text: str) -> str:
+    """Strip ISO timestamp prefixes from log-style output lines."""
+    lines = text.split("\n")
+    # Only strip if a significant portion of lines have timestamps
+    ts_count = sum(1 for l in lines[:20] if TIMESTAMP_PREFIX.match(l))
+    if ts_count < 3:
+        return text
+    return "\n".join(TIMESTAMP_PREFIX.sub("", line) for line in lines)
 
 PKG_MANAGERS = {"npm", "npx", "yarn", "pnpm", "bun", "pip", "pip3", "pipx", "uv",
                 "gem", "bundle", "cargo", "composer", "dotnet", "pod", "go",
@@ -364,17 +392,38 @@ def compress_bash_output(cmd: str, stdout: str, stderr: str) -> Tuple[str, str, 
     return stdout, stderr, rules_fired
 
 
+def _apply_boilerplate_rules(text: str, rules_fired: List[str]) -> str:
+    """Apply boilerplate stripping rules that work across all tool types."""
+    # Minify JSON output
+    minified = minify_json(text)
+    if minified != text:
+        text = minified
+        rules_fired.append("json_minify")
+
+    # Strip timestamp prefixes from log output
+    stripped = strip_timestamp_prefixes(text)
+    if stripped != text:
+        text = stripped
+        rules_fired.append("timestamp_strip")
+
+    return text
+
+
 def recompress_tool_result(tool_name: str, content: str, cmd: str = "") -> Tuple[str, List[str]]:
     """Apply appropriate compression to a tool result string based on tool type."""
     if tool_name == "Read":
-        return compress_read_output(content)
+        result, rules = compress_read_output(content)
     elif tool_name in ("Grep", "Glob"):
-        return compress_grep_output(content)
+        result, rules = compress_grep_output(content)
     elif tool_name == "Bash":
-        stdout, _stderr, rules = compress_bash_output(cmd, content, "")
-        return stdout, rules
+        result, _stderr, rules = compress_bash_output(cmd, content, "")
     else:
         # Generic: strip ANSI and collapse blanks
         result = strip_ansi(content)
         result = collapse_blank_lines(result)
-        return result, []
+        rules = []
+
+    # Apply cross-tool boilerplate stripping
+    result = _apply_boilerplate_rules(result, rules)
+
+    return result, rules
