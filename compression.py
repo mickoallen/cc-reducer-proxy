@@ -94,84 +94,6 @@ def recompress_historical_tool_results(
     return result, recompressed
 
 
-ASSISTANT_TEXT_STALE_TURNS = 10
-ASSISTANT_TEXT_MAX_CHARS = 500
-TOOL_INPUT_STALE_TURNS = 10
-TOOL_INPUT_MAX_CHARS = 200
-
-
-def compress_old_assistant_blocks(messages: List[dict]) -> Tuple[List[dict], int, int]:
-    """
-    Truncate old assistant text blocks and tool_use inputs.
-    Returns (messages, text_truncated_count, input_truncated_count).
-    """
-    total_assistant_turns = sum(1 for m in messages if m.get("role") == "assistant")
-    text_truncated = 0
-    input_truncated = 0
-    result = []
-    assistant_turn = 0
-
-    for msg in messages:
-        if msg.get("role") != "assistant":
-            result.append(msg)
-            continue
-
-        assistant_turn += 1
-        turns_ago = total_assistant_turns - assistant_turn
-
-        if turns_ago < ASSISTANT_TEXT_STALE_TURNS:
-            result.append(msg)
-            continue
-
-        content = msg.get("content", [])
-        if not isinstance(content, list):
-            result.append(msg)
-            continue
-
-        new_content = []
-        changed = False
-        for block in content:
-            if not isinstance(block, dict):
-                new_content.append(block)
-                continue
-
-            if block.get("type") == "text":
-                text = block.get("text", "")
-                if len(text) > ASSISTANT_TEXT_MAX_CHARS:
-                    block = dict(block)
-                    block["text"] = text[:ASSISTANT_TEXT_MAX_CHARS] + f"\n[truncated — assistant text from {turns_ago} turns ago]"
-                    text_truncated += 1
-                    changed = True
-
-            elif block.get("type") == "tool_use":
-                inp = block.get("input", {})
-                if isinstance(inp, dict):
-                    new_inp = {}
-                    inp_changed = False
-                    for k, v in inp.items():
-                        if k in ("id", "name"):
-                            new_inp[k] = v
-                        elif isinstance(v, str) and len(v) > TOOL_INPUT_MAX_CHARS:
-                            new_inp[k] = v[:TOOL_INPUT_MAX_CHARS] + "…[truncated]"
-                            inp_changed = True
-                        else:
-                            new_inp[k] = v
-                    if inp_changed:
-                        block = dict(block)
-                        block["input"] = new_inp
-                        input_truncated += 1
-                        changed = True
-
-            new_content.append(block)
-
-        if changed:
-            msg = dict(msg)
-            msg["content"] = new_content
-        result.append(msg)
-
-    return result, text_truncated, input_truncated
-
-
 def compress_messages(messages: List[dict]) -> Tuple[List[dict], dict]:
     """
     Apply the full compression pipeline to the messages array.
@@ -192,9 +114,6 @@ def compress_messages(messages: List[dict]) -> Tuple[List[dict], dict]:
     # 4. Cap oversized results
     messages, capped = cap_tool_results(messages)
 
-    # 5. Compress old assistant text blocks and tool_use inputs
-    messages, text_truncated, input_truncated = compress_old_assistant_blocks(messages)
-
     compressed_size = _estimate_chars(messages)
     saved = original_size - compressed_size
 
@@ -208,8 +127,6 @@ def compress_messages(messages: List[dict]) -> Tuple[List[dict], dict]:
             "dedup_tools": deduped,
             "stale_truncation": stale_truncated,
             "cap": capped,
-            "assistant_text_truncation": text_truncated,
-            "tool_input_truncation": input_truncated,
         },
     }
     return messages, stats

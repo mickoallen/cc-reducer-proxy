@@ -44,9 +44,6 @@ def summarize(entries: list[dict]):
     dedup = sum(e.get("rules", {}).get("dedup_tools", 0) + e.get("rules", {}).get("dedup_read", 0) for e in entries)
     stale = sum(e.get("rules", {}).get("stale_truncation", 0) for e in entries)
     capped = sum(e.get("rules", {}).get("cap", 0) for e in entries)
-    asst_text = sum(e.get("rules", {}).get("assistant_text_truncation", 0) for e in entries)
-    tool_input = sum(e.get("rules", {}).get("tool_input_truncation", 0) for e in entries)
-
     reduction_pct = (total_saved_chars / total_original * 100) if total_original else 0
 
     print(f"Requests:        {total_requests}")
@@ -56,8 +53,6 @@ def summarize(entries: list[dict]):
     print(f"  dedup_tools:   {dedup}")
     print(f"  stale_trunc:   {stale}")
     print(f"  capped:        {capped}")
-    print(f"  asst_text:     {asst_text}")
-    print(f"  tool_input:    {tool_input}")
 
 
 def main():
