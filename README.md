@@ -44,13 +44,6 @@ Tool results older than 10 assistant turns are trimmed to 500 chars, with a `[tr
 
 Tool results older than 5 assistant turns are capped at 4000 chars.
 
-#### 5. Compress old assistant blocks
-
-For assistant messages older than 10 turns:
-
-- **Text blocks** — Claude's own explanations are truncated to 500 chars. Old prose rarely gets re-referenced.
-- **Tool use inputs** — long input values (bash commands, file contents in Write calls) are truncated to 200 chars. The tool name and ID are preserved for result pairing.
-
 ## Setup
 
 ```bash
@@ -98,6 +91,4 @@ Saved:           1,191,475 chars (~397,158 tokens, 29.8% reduction)
   dedup_tools:   5
   stale_trunc:   100
   capped:        174
-  asst_text:     12
-  tool_input:    8
 ```
